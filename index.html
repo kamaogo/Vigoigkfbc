@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Messenger Final</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+:root{--bg:#F1F8F6;--main:#128C7E;--me:#dcf8c6}
+*{box-sizing:border-box;font-family:system-ui}
+html,body{margin:0;height:100%;background:var(--bg);overflow:hidden}
+header{background:linear-gradient(135deg,#128C7E,#0ea5a4);color:white;padding:12px;display:flex;justify-content:space-between;align-items:center;min-height: 60px;}
+#status{font-size:12px;opacity:.9}
+.header-right{display:flex;gap:14px}
+.page{display:none;height:calc(100vh - 70px);padding:10px}
+.btn{width:100%;padding:14px;border:none;border-radius:14px;background:var(--main);color:white;margin:8px 0}
+input{width:100%;padding:12px;border-radius:12px;border:1px solid #ddd;margin:6px 0}
+
+#messages{height:60vh;overflow-y:auto}
+.msg{max-width:75%;padding:12px;margin:6px 0;border-radius:14px;background:white}
+.me{background:var(--me);margin-left:auto}
+
+.file-container {
+    background: white;
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid #ddd;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+#file { border: none; padding: 0; margin: 0; width: auto; }
+
+#emojiBox {
+    display: none;
+    background: white;
+    padding: 15px;
+    border-radius: 15px;
+    border: 1px solid #ddd;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 10px;
+    margin-bottom: 10px;
+    text-align: center;
+    font-size: 22px;
+}
+#emojiBox span { cursor: pointer; }
+
+/* CALL PAGE */
+#callPage{position:fixed;inset:0;background:#000;display:none;flex-direction:column;z-index:100;color:white}
+#callHeader{text-align:center;padding:10px;font-size:14px}
+#callMedia{flex:1;padding:6px}
+video,audio{width:100%;border-radius:12px}
+#callControls{display:flex;justify-content:space-around;padding:12px}
+#callControls button{padding:10px 16px;border:none;border-radius:20px;background:#128C7E;color:white}
+#incoming{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;color:white;align-items:center;justify-content:center;flex-direction:column;z-index:200}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div id="status">🔴 Disconnected</div>
+  </div>
+  <div class="header-right" id="callBtns" style="display:none">
+    <span onclick="startCall(false)"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.8 19.8 0 0 1 3.09 5.18 2 2 0 0 1 5.06 3h3a2 2 0 0 1 2 1.72c.12.81.3 1.6.54 2.36a2 2 0 0 1-.45 2.11L9.1 10.91a16 16 0 0 0 4 4l1.72-1.05a2 2 0 0 1 2.11-.45c.76.24 1.55.42 2.36.54A2 2 0 0 1 22 16.92z"/></svg></span>
+    <span onclick="startCall(true)"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2"><rect x="2" y="7" width="15" height="10" rx="2"/><polygon points="23 7 17 12 23 17 23 7"/></svg></span>
+  </div>
+</header>
+
+<div class="page" id="home">
+  <button class="btn" onclick="show('add')">➕ Add Friend</button>
+</div>
+
+<div class="page" id="add">
+  <input id="mycode" readonly>
+  <button class="btn" onclick="copyCode()">Copy</button>
+  <input id="friendcode" placeholder="Friend Code">
+  <button class="btn" onclick="connect()">Connect</button>
+  <button class="btn" onclick="show('home')" style="background:#6b7280">⬅ Back</button>
+</div>
+
+<div class="page" id="chat">
+  <div id="messages"></div>
+
+  <div id="emojiBox">
+    <span onclick="addEmoji('😀')">😀</span><span onclick="addEmoji('😂')">😂</span><span onclick="addEmoji('😍')">😍</span>
+    <span onclick="addEmoji('😎')">😎</span><span onclick="addEmoji('🤔')">🤔</span><span onclick="addEmoji('😢')">😢</span>
+    <span onclick="addEmoji('👍')">👍</span><span onclick="addEmoji('❤️')">❤️</span><span onclick="addEmoji('🔥')">🔥</span>
+    <span onclick="addEmoji('🎉')">🎉</span><span onclick="addEmoji('💯')">💯</span><span onclick="addEmoji('👋')">👋</span>
+  </div>
+  
+  <div class="file-container" id="fileWrap">
+    <input type="file" id="file" accept="image/*">
+    <span onclick="toggleEmoji()" style="font-size: 24px; cursor: pointer;">😊</span>
+  </div>
+
+  <input id="text" placeholder="Type message">
+  <button class="btn" onclick="send()">Send</button>
+</div>
+
+<div id="callPage">...</div>
+<div id="incoming">...</div>
+
+<script>
+let peer=new Peer();
+let conn;
+
+function show(p){
+  document.querySelectorAll('.page').forEach(x=>x.style.display="none");
+  document.getElementById(p).style.display="block";
+  callBtns.style.display = p==="chat"?"flex":"none";
+}
+show("home");
+
+function toggleEmoji() {
+  const eb = document.getElementById('emojiBox');
+  const fw = document.getElementById('fileWrap');
+  if (eb.style.display === 'grid') {
+    eb.style.display = 'none';
+    fw.style.display = 'flex';
+  } else {
+    eb.style.display = 'grid';
+    fw.style.display = 'none';
+  }
+}
+
+function addEmoji(emoji) {
+  document.getElementById('text').value += emoji;
+}
+
+peer.on("open",id=>mycode.value=id);
+
+peer.on("connection",c=>{
+  conn=c;
+  status.innerText="🟢 Connected";
+  setupConnection();
+  show("chat");
+});
+
+function connect(){
+  conn=peer.connect(friendcode.value);
+  status.innerText="🟢 Connected";
+  setupConnection();
+  show("chat");
+}
+
+function setupConnection(){
+  conn.on("data",data=>{
+    if(typeof data === 'string') addMsg(data, false);
+    else if(data.type === 'image') addImage(data.data, false);
+  });
+}
+
+function send(){
+  if(!conn) return;
+  const f = document.getElementById('file');
+  if(f.files.length > 0){
+    const reader = new FileReader();
+    reader.onload = e => {
+      conn.send({type: 'image', data: e.target.result});
+      addImage(e.target.result, true);
+      f.value = '';
+    }
+    reader.readAsDataURL(f.files[0]);
+  } else if(text.value) {
+    conn.send(text.value);
+    addMsg(text.value, true);
+    text.value = "";
+  }
+  document.getElementById('emojiBox').style.display = 'none';
+  document.getElementById('fileWrap').style.display = 'flex';
+}
+
+function addMsg(m, me){
+  let d=document.createElement("div");
+  d.className="msg"+(me?" me":"");
+  d.innerText=m;
+  messages.appendChild(d);
+  messages.scrollTop=messages.scrollHeight;
+}
+
+function addImage(url, me){
+  let d=document.createElement("div");
+  d.className="msg"+(me?" me":"");
+  let i=document.createElement("img");
+  i.src=url; i.style.maxWidth="200px"; i.style.borderRadius="10px";
+  d.appendChild(i);
+  messages.appendChild(d);
+  messages.scrollTop=messages.scrollHeight;
+}
+
+function copyCode(){
+  mycode.select();
+  document.execCommand("copy");
+  alert("Copied");
+}
+</script>
+</body>
+</html>
